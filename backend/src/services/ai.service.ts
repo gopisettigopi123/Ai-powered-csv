@@ -37,8 +37,16 @@ export class AIService {
             throw new Error("Empty response from AI");
         }
 
+        let cleanText = responseText.trim();
+        if (cleanText.startsWith('```json')) {
+            cleanText = cleanText.replace(/```json\n?/, '').replace(/```\n?$/, '');
+        } else if (cleanText.startsWith('```')) {
+            cleanText = cleanText.replace(/```\n?/, '').replace(/```\n?$/, '');
+        }
+        cleanText = cleanText.trim();
+
         try {
-           const parsedBatch = JSON.parse(responseText) as CRMRecord[];
+           const parsedBatch = JSON.parse(cleanText) as CRMRecord[];
            return parsedBatch;
         } catch(e) {
            console.error("Failed to parse JSON response from Gemini", e);

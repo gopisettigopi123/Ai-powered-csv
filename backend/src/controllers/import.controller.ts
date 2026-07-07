@@ -61,4 +61,32 @@ export class ImportController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  public async uploadBatch(req: Request, res: Response) {
+    try {
+      const { batch } = req.body;
+      if (!batch || !Array.isArray(batch)) {
+        return res.status(400).json({ error: 'Invalid batch data' });
+      }
+
+      const parsedBatch = await aiService.processBatch(batch);
+      
+      if (parsedBatch.length > 0) {
+        try {
+          await Lead.insertMany(parsedBatch);
+        } catch (dbError) {
+          console.error("Failed to save batch to DB", dbError);
+        }
+      }
+
+      res.json({
+        success: true,
+        imported: parsedBatch.length,
+        skipped: batch.length - parsedBatch.length
+      });
+    } catch (error) {
+      console.error("Batch Server Error:", error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

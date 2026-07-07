@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
 import { Upload, X, FileSpreadsheet, Loader2 } from 'lucide-react';
@@ -15,6 +16,8 @@ export function ImportModal({ onClose }: ImportModalProps) {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const router = useRouter();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -43,33 +46,57 @@ export function ImportModal({ onClose }: ImportModalProps) {
   const handleUpload = async () => {
     if (!file) return;
     setIsProcessing(true);
+    setProgress(0);
     
-    const formData = new FormData();
-    formData.append('file', file);
+    toast.info('Starting incremental AI processing...', { duration: 3000 });
 
-    toast.info('Starting AI CSV Processing. This may take a moment...', { duration: 5000 });
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const records = results.data;
+        const BATCH_SIZE = 25;
+        const totalBatches = Math.ceil(records.length / BATCH_SIZE);
+        
+        let totalImported = 0;
+        let totalSkipped = 0;
+        let hasError = false;
 
-    try {
-      const response = await fetch('http://localhost:5000/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+        for (let i = 0; i < totalBatches; i++) {
+          const batch = records.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+          
+          try {
+            const response = await fetch('http://localhost:5000/api/upload-batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ batch }),
+            });
 
-      if (!response.ok) {
-        throw new Error('API Error');
+            if (!response.ok) throw new Error('Batch API Error');
+            
+            const result = await response.json();
+            totalImported += result.imported;
+            totalSkipped += result.skipped;
+            
+            setProgress(Math.round(((i + 1) / totalBatches) * 100));
+          } catch (error) {
+            console.error(error);
+            hasError = true;
+            break;
+          }
+        }
+
+        setIsProcessing(false);
+        
+        if (hasError) {
+          toast.error('Failed to import some leads. Please check your data or API key.');
+        } else {
+          toast.success(`Successfully imported ${totalImported} leads! Skipped ${totalSkipped}.`);
+          onClose();
+          router.push('/manage-leads');
+        }
       }
-
-      const result = await response.json();
-      toast.success(`Successfully imported ${result.totalImported} leads! Skipped ${result.totalSkipped}.`);
-      onClose(); // Close modal on success
-      
-      // In a real app we'd trigger a refetch of the leads table here using a store or context
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to import leads. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
+    });
   };
 
   return (
@@ -78,13 +105,25 @@ export function ImportModal({ onClose }: ImportModalProps) {
         
         {/* Header */}
         <div className="p-6 border-b border-gray-100 dark:border-white/10 flex justify-between items-start">
-          <div>
-            <h2 className="text-xl font-bold mb-1">Import Leads via CSV</h2>
-            <p className="text-sm text-gray-500">Upload a CSV file to bulk import leads into your system.</p>
+          <div className="w-full">
+            <div className="flex justify-between items-start w-full">
+              <div>
+                <h2 className="text-xl font-bold mb-1">Import Leads via CSV</h2>
+                <p className="text-sm text-gray-500">Upload a CSV file to bulk import leads into your system.</p>
+              </div>
+              <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {isProcessing && (
+              <div className="mt-4 w-full bg-gray-200 dark:bg-white/10 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-2 transition-all duration-300 ease-out" 
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+            )}
           </div>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Content */}

@@ -79,17 +79,30 @@ const columns = [
   })
 ];
 
+import { useVirtualizer } from '@tanstack/react-virtual';
+
 export default function ManageLeadsPage() {
   const [data, setData] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     const fetchLeads = async () => {
       try {
         const response = await fetch('http://localhost:5000/api/leads');
         if (response.ok) {
-          const leads = await response.json();
-          setData(leads);
+          const rawLeads = await response.json();
+          const formattedLeads: Lead[] = rawLeads.map((l: any) => ({
+            id: l._id,
+            name: l.name || '-',
+            email: l.email || '-',
+            contact: l.mobile_without_country_code ? `${l.country_code || ''} ${l.mobile_without_country_code}`.trim() : '-',
+            dateCreated: new Date(l.createdAt || l.created_at).toLocaleString(),
+            company: l.company || '-',
+            status: l.crm_status || 'Not Dialed',
+            quality: l.description || '-'
+          }));
+          setData(formattedLeads);
         } else {
           console.error('Failed to fetch leads');
         }
@@ -108,6 +121,23 @@ export default function ManageLeadsPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  const { rows } = table.getRowModel();
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 65, // Estimated row height
+    overscan: 5,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+
+  const paddingTop = virtualRows.length > 0 ? virtualRows?.[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? totalSize - (virtualRows?.[virtualRows.length - 1]?.end || 0)
+    : 0;
+
   return (
     <div className="h-full flex flex-col p-8 bg-gray-50 dark:bg-black overflow-hidden">
       <div className="mb-6">
@@ -118,7 +148,7 @@ export default function ManageLeadsPage() {
       <div className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl shadow-sm overflow-hidden flex flex-col">
         {/* Table Header Controls */}
         <div className="p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-transparent">
-          <h2 className="text-lg font-bold">Your Leads</h2>
+          <h2 className="text-lg font-bold">Your Leads ({rows.length})</h2>
           <div className="flex items-center gap-3">
             <div className="relative">
               <input 
@@ -137,7 +167,7 @@ export default function ManageLeadsPage() {
         </div>
 
         {/* Table Body */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" ref={tableContainerRef}>
           <table className="w-full text-sm text-left">
             <thead className="bg-white dark:bg-black sticky top-0 border-b border-gray-200 dark:border-white/10 z-10">
               {table.getHeaderGroups().map(headerGroup => (
@@ -162,30 +192,41 @@ export default function ManageLeadsPage() {
                     Loading leads...
                   </td>
                 </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="px-6 py-12 text-center text-gray-500">
                     No leads found. Upload a CSV to get started.
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map(row => (
-                  <tr key={row.id} className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} className="px-6 py-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <>
+                  {paddingTop > 0 && (
+                    <tr><td style={{ height: `${paddingTop}px` }} /></tr>
+                  )}
+                  {virtualRows.map(virtualRow => {
+                    const row = rows[virtualRow.index];
+                    return (
+                      <tr 
+                        key={row.id} 
+                        className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                        ref={rowVirtualizer.measureElement}
+                        data-index={virtualRow.index}
+                      >
+                        {row.getVisibleCells().map(cell => (
+                          <td key={cell.id} className="px-6 py-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr><td style={{ height: `${paddingBottom}px` }} /></tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
-          <div className="p-6 flex justify-center border-t border-gray-100 dark:border-white/10">
-            <button className="px-6 py-2 border border-gray-300 dark:border-white/20 rounded-full text-emerald-600 font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors">
-              Load more
-            </button>
-          </div>
         </div>
       </div>
     </div>
