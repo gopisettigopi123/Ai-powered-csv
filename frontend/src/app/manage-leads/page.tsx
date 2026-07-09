@@ -89,7 +89,8 @@ export default function ManageLeadsPage() {
   React.useEffect(() => {
     const fetchLeads = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/leads');
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const response = await fetch(`${apiUrl}/api/leads`);
         if (response.ok) {
           const rawLeads = await response.json();
           const formattedLeads: Lead[] = rawLeads.map((l: any) => ({
